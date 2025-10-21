@@ -1,3 +1,29 @@
+let canvasContext;
+let playerContext;
+
+// set canvas from html as canvas for out of game canvasContext use, might be redundent
+const canvas = document.getElementById("b-jumper");
+// define canvasContext for game space
+canvasContext = canvas.getContext("2d");
+
+window.onload = function () {
+    // define canvas size
+    canvas.width = 1024;
+    canvas.height = 576;
+
+    canvasContext.fillRect(0, 0, canvas.width, canvas.height);
+
+    const game = new Game();
+    game.startGameLoop();
+
+    // player.draw();
+
+    isJumping = false;
+    hasJumped = false;
+    isDashing = false;
+    isAlive = true;
+};
+
 // player sprite and movement variables
 let playerSprite;
 let playerSpeed = 10;
@@ -23,7 +49,8 @@ let playerVelocityY = 0;
 let playerVelocityX = 0;
 
 class Player {
-    constructor(playerX, playerY, playerWidth, playerHeight, context) {
+    canvas = this.canvas;
+    constructor(playerX, playerY, playerWidth, playerHeight, canvasContext) {
         this.x = playerX;
         this.y = playerY;
         this.width = playerWidth;
@@ -33,38 +60,68 @@ class Player {
         this.playerRunSpeed = playerRunSpeed;
         this.playerDashSpeed = dashSpeed;
         this.jumpSpeed = jumpSpeed;
-        this.context = context;
+        this.canvasContext = canvasContext;
+        this.playerContext = playerContext;
     }
 
     draw() {
-        this.context.fillStyle = "blue";
-        this.context.fillRect(this.x, this.y, this.width, this.height);
+        this.canvasContext.fillStyle = "blue";
+        this.canvasContext.fillRect(this.x, this.y, this.width, this.height);
+    }
+
+    update() {
+        // apply gravity
+        this.playerVelocityY += this.gravity;
+
+        // update player position
+        this.y += this.playerVelocityY;
+
+        // check if player is on the ground
+        if (this.y + this.height >= this.canvas.height) {
+            this.y = this.canvas.height - this.height;
+            this.playerVelocityY = 0;
+            isJumping = false;
+            hasJumped = false;
+        }
     }
 }
 
-window.onload = function () {
-    // set canvas from html as map for out of game context use, might be redundent
-    const map = document.getElementById("b-jumper");
-    // define context for game space
-    const context = map.getContext("2d");
+class Game {
+    constructor(canvasContext) {
+        this.player = new Player(
+            playerX,
+            playerY,
+            playerWidth,
+            playerHeight,
+            canvasContext
+        );
+        this.canvasContext = canvasContext;
+        this.gravity = gravity;
+        this.intervalId = null;
+    }
 
-    // define canvas size
-    map.width = 1024;
-    map.height = 576;
+    startGameLoop() {
+        this.intervalId = setInterval(() => {
+            this.update();
+            this.draw();
+        }, 1000 / 60); // 60 frames per second, using setInterval instead of requestAnimationFrame to avoid player system issues
+    }
 
-    context.fillRect(0, 0, map.width, map.height);
+    stopGameLoop() {
+        clearInterval(this.intervalId);
+    }
 
-    const player = new Player(
-        playerX,
-        playerY,
-        playerWidth,
-        playerHeight,
-        context
-    );
-    player.draw();
+    update() {
+        this.player.update();
+    }
 
-    isJumping = false;
-    hasJumped = false;
-    isDashing = false;
-    isAlive = true;
-};
+    draw() {
+        this.canvasContext.clearRect(
+            0,
+            0,
+            this.canvasContext.canvas.width,
+            this.canvasContext.canvas.height
+        );
+        this.player.draw();
+    }
+}

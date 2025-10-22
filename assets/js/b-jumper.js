@@ -14,6 +14,18 @@ const GameState = {
     GAMEOVER: "gameover",
 };
 
+const EnemyState = {
+    SPAWNING: "spawning",
+    MOVING: "moving",
+    ATTACKING: "attacking",
+    RETREATING: "retreating",
+    DEAD: "dead",
+};
+
+const FRAME_RATE = 60;
+const WALL_SECTION_DAMAGE = 20;
+const PLAYER_JUMP_SPEED = 15;
+
 let context;
 let game;
 let gameState = GameState.PLAYING;
@@ -72,6 +84,7 @@ let playerVelocityX = 0;
 // enemy has a radius but for collision detection we need height and width
 let enemyRadius = 10;
 
+// !!! add keydown into eachother !!!
 // input handling, overkill for this project but allows for more complex input handling later if I decide to continue development
 let lastKey;
 const keys = {
@@ -163,13 +176,234 @@ class Enemy {
         this.y = y;
         this.radius = radius;
         this.context = context;
+        this.health = 100;
+        this.speed = 2;
+        this.state = EnemyState.SPAWNING;
+        this.velocityX = -this.speed;
+        this.velocityY = 0;
+        this.retreatTimer = 0;
+    }
+
+    setState(newState) {
+        if (this.state === newState) return;
+        this.state = newState;
+
+        switch (newState) {
+            case EnemyState.SPAWNING:
+                this.velocityX = -this.speed;
+                break;
+            case EnemyState.MOVING:
+                this.velocityX = -this.speed;
+                this.velocityY = 0;
+                break;
+            case EnemyState.RETREATING:
+                this.retreatTimer = 60;
+                this.velocityX = 4;
+                break;
+            case EnemyState.DEAD:
+                this.destroyed = true;
+                break;
+        }
+    }
+
+    takeDamage(amount) {
+        this.health -= amount;
+        if (this.health <= 0) {
+            this.setState(EnemyState.DEAD);
+        }
+    }
+
+    bounceBack() {
+        if (this.state !== EnemyState.RETREATING) {
+            this.setState(EnemyState.RETREATING);
+            this.takeDamage(10);
+        }
+    }
+
+    update() {
+        switch (this.state) {
+            case EnemyState.SPAWNING:
+                this.setState(EnemyState.MOVING);
+                break;
+
+            case EnemyState.MOVING:
+                this.x += this.velocityX;
+                this.y += this.velocityY;
+                break;
+
+            case EnemyState.RETREATING:
+                this.x += this.velocityX;
+                this.retreatTimer--;
+                if (this.retreatTimer <= 0) {
+                    this.setState(EnemyState.MOVING);
+                }
+                break;
+
+            case EnemyState.DEAD:
+                this.destroyed = true;
+                break;
+        }
     }
 
     draw() {
         this.context.beginPath();
         this.context.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
-        this.context.fillStyle = "red";
+
+        switch (this.state) {
+            case EnemyState.MOVING:
+                this.context.fillStyle = "red";
+                break;
+            case EnemyState.RETREATING:
+                this.context.fillStyle = "orange";
+                break;
+            case EnemyState.DEAD:
+                this.context.fillStyle = "gray";
+                break;
+            default:
+                this.context.fillStyle = "purple";
+                break;
+        }
+
         this.context.fill();
+    }
+}
+
+class HomingEnemy extends Enemy {
+    constructor(x, y, speed, radius, context, targetPlayer = false) {
+        super(x, y, radius, context);
+        this.speed = speed;
+        this.targetPlayer = targetPlayer;
+        this.homingActive = false;
+        this.currentTarget = null; // store chosen target once
+    }
+
+    update(player, wall) {
+        // Activate homing once halfway across screen
+        if (!this.homingActive && this.x < canvas.width / 2) {
+            this.homingActive = true;
+
+            // pick target when activating
+            if (this.targetPlayer) {
+                this.currentTarget = player;
+            } else {
+                const alive = wall.aliveSections;
+                if (alive.length > 0) {
+                    this.currentTarget =
+                        alive[Math.floor(Math.random() * alive.length)];
+                } else {
+                    this.currentTarget = player; // fallback
+                }
+            }
+        }
+
+        switch (this.state) {
+            case EnemyState.SPAWNING:
+                this.setState(EnemyState.MOVING);
+                break;
+
+            case EnemyState.MOVING:
+                if (this.homingActive && this.currentTarget) {
+                    const targetX =
+                        this.currentTarget.x +
+                        (this.currentTarget.width ?? 0) / 2;
+                    const targetY =
+                        this.currentTarget.y +
+                        (this.currentTarget.height ?? 0) / 2;
+
+                    const dx = targetX - this.x;
+                    const dy = targetY - this.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+
+                    if (distance > 0) {
+                        this.velocityX = (dx / distance) * this.speed;
+                        this.velocityY = (dy / distance) * this.speed;
+                    }
+                }
+
+                this.x += this.velocityX;
+                this.y += this.velocityY;
+                break;
+
+            case EnemyState.RETREATING:
+                this.x += this.velocityX;
+                this.retreatTimer--;
+                if (this.retreatTimer <= 0) {
+                    this.setState(EnemyState.MOVING);
+                    this.homingActive = false; // reset so they can pick new target later
+                    this.currentTarget = null;
+                }
+                break;
+
+            case EnemyState.DEAD:
+                this.destroyed = true;
+                break;
+        }
+    }
+}
+
+class PowerUp {
+    constructor(x, y, type, context, duration = 10000) {
+        this.x = x;
+        this.y = y;
+        this.width = 16; // size for collision
+        this.height = 16;
+        this.type = type; // e.g., "speed"
+        this.context = context;
+        this.active = true;
+        this.duration = duration; // milliseconds
+    }
+
+    draw() {
+        if (!this.active) return;
+
+        switch (this.type) {
+            case "speed":
+                this.context.fillStyle = "green";
+                break;
+            case "jump":
+                this.context.fillStyle = "purple"; // distinct color
+                break;
+            default:
+                this.context.fillStyle = "white";
+        }
+
+        this.context.fillRect(this.x, this.y, this.width, this.height);
+    }
+
+    apply(player) {
+        if (!this.active) return;
+        this.active = false;
+
+        switch (this.type) {
+            case "speed":
+                player.playerBaseSpeed *= 2;
+                player.playerRunSpeed *= 2;
+
+                setTimeout(() => {
+                    player.playerBaseSpeed /= 2;
+                    player.playerRunSpeed /= 2;
+                }, this.duration);
+                break;
+
+            case "jump":
+                player.jumpSpeed *= 1.5; // increase jump height by 50%
+
+                setTimeout(() => {
+                    player.jumpSpeed /= 1.5;
+                }, this.duration);
+                break;
+        }
+    }
+
+    checkCollision(player) {
+        if (
+            player.x < this.x + this.width &&
+            player.x + player.width > this.x &&
+            player.y < this.y + this.height &&
+            player.y + player.height > this.y
+        ) {
+            this.apply(player);
+        }
     }
 }
 
@@ -188,6 +422,10 @@ class Player {
         this.context = context;
         this.playerVelocityY = 0;
         this.playerVelocityX = 0;
+        this.isJumping;
+        this.hasJumped;
+        this.isAlive;
+        this.isDashing;
     }
 
     draw() {
@@ -195,9 +433,35 @@ class Player {
         this.context.fillRect(this.x, this.y, this.width, this.height);
     }
 
-    update() {
+    handleInput(keys, lastKey) {
+        // Horizontal movement
+        const speed = keys.shift.pressed
+            ? this.playerRunSpeed
+            : this.playerBaseSpeed;
+
+        if (keys.a.pressed && keys.d.pressed) {
+            this.playerVelocityX = lastKey === "a" ? -speed : speed;
+        } else if (keys.a.pressed) {
+            this.playerVelocityX = -speed;
+        } else if (keys.d.pressed) {
+            this.playerVelocityX = speed;
+        } else {
+            this.playerVelocityX = 0;
+        }
+
+        // Jumping
+        if (keys.space.pressed && !isJumping && !hasJumped) {
+            this.playerVelocityY = -this.jumpSpeed;
+            isJumping = true;
+            hasJumped = true;
+        }
+    }
+
+    updatePosition() {
         // Apply gravity
         this.playerVelocityY += this.gravity;
+
+        this.x += this.playerVelocityX;
         this.y += this.playerVelocityY;
 
         // Ground check
@@ -208,52 +472,22 @@ class Player {
             hasJumped = false;
         }
 
-        // Horizontal speed
-        const speed = keys.shift.pressed
-            ? this.playerRunSpeed
-            : this.playerBaseSpeed;
-
-        // Horizontal movement with lastKey handling
-        if (keys.a.pressed && keys.d.pressed) {
-            // Both keys pressed: last pressed key wins
-            this.playerVelocityX = lastKey === "a" ? -speed : speed;
-        } else if (keys.a.pressed) {
-            this.playerVelocityX = -speed;
-        } else if (keys.d.pressed) {
-            this.playerVelocityX = speed;
-        } else {
-            this.playerVelocityX = 0;
-            lastKey = null; // reset lastKey when no movement keys are pressed
-        }
-
-        this.x += this.playerVelocityX;
-
-        // Keep player inside canvas
+        // Keep inside bounds
         if (this.x < 0) this.x = 0;
-        if (this.x + this.width > canvasWidth)
+        if (this.x + this.width > canvasWidth) {
             this.x = canvasWidth - this.width;
-
-        // Jumping
-        if (keys.space.pressed && !isJumping && !hasJumped) {
-            this.playerVelocityY = -this.jumpSpeed;
-            isJumping = true;
-            hasJumped = true;
         }
-
-        if (
-            !keys.a.pressed &&
-            !keys.d.pressed &&
-            !keys.space.pressed &&
-            !keys.shift.pressed
-        ) {
-            lastKey = null; // reset lastKey when no movement keys are pressed
-            this.playerVelocityX = 0; // and stop player x movement
-        }
+    }
+    updatePlayer() {
+        this.player.handleInput(keys, lastKey);
+        this.player.updatePosition();
     }
 }
 
+let nextBulletId = 0;
 class Bullet {
     constructor(x, y, targetX, targetY, context) {
+        this.id = nextBulletId++;
         this.x = x;
         this.y = y;
         this.radius = 3;
@@ -314,19 +548,80 @@ class Game {
         // add bullet storage
         this.bullets = [];
 
+        // add walls
+        this.wall = new Wall(context, canvasHeight);
+
+        // powerups
+        this.powerUps = [];
+
+        // waves
+        this.waveNumber = 0;
+        this.enemiesPerWave = 5; // starting enemy count
+        this.waveCooldown = 4000; // ms between waves
+        this.waveActive = false;
+        this.lastWaveEnd = Date.now();
+
         // score system
         this.killScore = 0;
         this.timeScore = 0;
         this.lastScoreTime = Date.now();
     }
 
+    allWallsDestroyed() {
+        return this.wall.sections.every((section) => section.destroyed);
+    }
+
+    spawnPowerUp(x, y) {
+        const types = ["speed", "jump"];
+        const baseChance = 0.2;
+        const waveBonus = 0.9 * this.waveNumber; // +5% per wave
+        const chance = Math.min(0.9, baseChance + waveBonus); // cap at 70%
+
+        if (Math.random() < chance) {
+            const type = types[Math.floor(Math.random() * types.length)];
+            this.powerUps.push(new PowerUp(x, y, type, this.context));
+        }
+    }
+
+    spawnWave() {
+        this.waveNumber++;
+        this.waveActive = true;
+
+        // scale difficulty: more enemies per wave
+        this.totalEnemiesToSpawn = this.enemiesPerWave + this.waveNumber * 2;
+
+        // spawn delay in milliseconds (smaller = faster)
+        this.spawnDelay = Math.max(150, 800 - this.waveNumber * 50);
+
+        this.spawnedEnemies = 0;
+        this.nextEnemySpawnTime = Date.now() + this.spawnDelay;
+
+        console.log(
+            `Wave ${this.waveNumber} incoming! (${this.totalEnemiesToSpawn} enemies)`
+        );
+    }
+
     spawnEnemy() {
-        // random x position within canvas width using enemyRadius to prevent spawning off screen
-        const x = Math.random() * (canvasWidth - enemyRadius * 2) + enemyRadius;
-        // spawn them at the top for now
-        const y = -enemyRadius * 2;
-        const enemy = new Enemy(x, y, enemyRadius, this.context);
+        const x = canvasWidth + enemyRadius * 2;
+        const y =
+            Math.random() * (canvasHeight - enemyRadius * 2) + enemyRadius;
+
+        let enemy;
+
+        // only start spawning homing enemies from certain wave
+        if (this.waveNumber >= 2 && Math.random() < 0.2) {
+            // 20% chance
+            enemy = new HomingEnemy(x, y, 2, enemyRadius, this.context);
+        } else {
+            enemy = new Enemy(x, y, enemyRadius, this.context);
+        }
+
         this.enemies.push(enemy);
+
+        // adjust normal enemies speed per wave
+        if (!(enemy instanceof HomingEnemy)) {
+            enemy.velocityX -= this.waveNumber * 0.2;
+        }
     }
 
     fireBullet(targetX, targetY) {
@@ -341,80 +636,142 @@ class Game {
     }
 
     update() {
-        this.player.update();
+        this.updatePlayer();
+        this.updateEnemies();
+        this.updateBullets();
+        this.handleCollisions();
+        this.handleWaves();
+        this.updateScore();
+        this.checkGameOver();
+        this.powerUps.forEach((pu) => pu.checkCollision(this.player));
+    }
 
-        const currentTime = Date.now();
+    updatePlayer() {
+        this.player.handleInput(keys, lastKey);
+        this.player.updatePosition();
+    }
 
-        // survival points / score increase over time
-        if (currentTime - this.lastScoreTime >= 1000) {
-            // increase score by 1 every second
-            this.timeScore += 1;
-            this.lastScoreTime = currentTime;
-        }
-
-        // spawn enemies at intervals
-        if (currentTime - this.lastSpawnTime > this.spawnInterval) {
-            this.spawnEnemy();
-            this.lastSpawnTime = currentTime;
-        }
-
-        // !!! Poor performance, use id based removal later if continuing development as forEach will scale poorly !!!
-        // run through our list of enemies for collisions
+    updateEnemies() {
         this.enemies.forEach((enemy) => {
-            this.playerenemyColliding(enemy, this.player);
-        });
-
-        // update enemy movement
-        this.enemies.forEach((enemy) => {
-            // move enemy downwards
-            enemy.y += 2;
-        });
-
-        // remove enemies that have gone off-screen
-        this.enemies = this.enemies.filter(
-            (enemy) => enemy.y < canvasHeight + enemy.radius
-        );
-
-        // update bullets
-        this.bullets.forEach((bullet, bulletIndex) => {
-            bullet.update();
-            // Remove bullet if it goes off-screen
-            if (bullet.isOffScreen(canvasWidth, canvasHeight)) {
-                this.bullets.splice(bulletIndex, 1);
-                return;
+            if (enemy instanceof HomingEnemy) {
+                enemy.update(this.player, this.wall);
+            } else {
+                enemy.update();
             }
+            this.wall.checkCollision(enemy);
 
-            // check for enemy and bullet collisions
-            this.enemies.forEach((enemy, enemyIndex) => {
+            // Spawn power-up when enemy dies
+            if (enemy.destroyed && !enemy.powerUpDropped) {
+                this.spawnPowerUp(enemy.x, enemy.y);
+                enemy.powerUpDropped = true; // prevent multiple drops
+            }
+        });
+
+        // remove destroyed/offscreen enemies
+        this.enemies = this.enemies.filter(
+            (enemy) => !enemy.destroyed && enemy.x + enemy.radius > 0
+        );
+    }
+
+    updateBullets() {
+        this.bullets.forEach((bullet) => bullet.update());
+        this.bullets = this.bullets.filter(
+            (bullet) => !bullet.isOffScreen(canvasWidth, canvasHeight)
+        );
+    }
+
+    handleCollisions() {
+        // bullets vs enemies
+        this.enemies.forEach((enemy) => {
+            this.bullets.forEach((bullet) => {
                 const dx = bullet.x - enemy.x;
                 const dy = bullet.y - enemy.y;
                 const distance = Math.sqrt(dx * dx + dy * dy);
 
-                // check if the distance between the bullet and the enemy is less than the sum of their radii (meaning a collision)
                 if (distance < bullet.radius + enemy.radius) {
-                    // remove enemy and bullet on collision
-                    this.enemies.splice(enemyIndex, 1);
-                    this.bullets.splice(bulletIndex, 1);
-                    this.killScore += 1; // increase kill score
-                    console.log("Enemy hit! Score;", this.killScore);
+                    enemy.takeDamage(50);
+                    this.killScore++;
+                    bullet.destroyed = true;
+
+                    // ✅ mark enemy destroyed if dead
+                    if (enemy.health <= 0) {
+                        enemy.destroyed = true;
+                    }
                 }
             });
         });
 
-        // check if player is alive
+        // bullets vs wall
+        this.bullets.forEach((bullet) => {
+            this.wall.sections.forEach((section) => {
+                if (
+                    !section.destroyed &&
+                    bullet.x + bullet.radius > section.x &&
+                    bullet.x - bullet.radius < section.x + section.width &&
+                    bullet.y + bullet.radius > section.y &&
+                    bullet.y - bullet.radius < section.y + section.height
+                ) {
+                    section.takeDamage(10);
+                    bullet.destroyed = true;
+                }
+            });
+        });
+
+        // player vs enemies
+        this.enemies.forEach((enemy) => {
+            this.playerenemyColliding(enemy, this.player);
+        });
+
+        // ✅ cleanup phase (only once)
+        this.bullets = this.bullets.filter(
+            (b) => !b.isOffScreen(canvasWidth, canvasHeight) && !b.destroyed
+        );
+        this.enemies = this.enemies.filter((enemy) => !enemy.destroyed);
+    }
+
+    handleWaves() {
+        const now = Date.now();
+
+        if (!this.waveActive && now - this.lastWaveEnd > this.waveCooldown) {
+            this.spawnWave();
+        }
+
+        if (this.waveActive && this.spawnedEnemies < this.totalEnemiesToSpawn) {
+            if (now >= this.nextEnemySpawnTime) {
+                this.spawnEnemy();
+                this.spawnedEnemies++;
+                this.nextEnemySpawnTime = now + this.spawnDelay;
+            }
+        }
+
+        if (
+            this.waveActive &&
+            this.spawnedEnemies >= this.totalEnemiesToSpawn &&
+            this.enemies.length === 0
+        ) {
+            this.waveActive = false;
+            this.lastWaveEnd = now;
+        }
+    }
+
+    updateScore() {
+        const currentTime = Date.now();
+        if (currentTime - this.lastScoreTime >= 1000) {
+            this.timeScore++;
+            this.lastScoreTime = currentTime;
+        }
+    }
+
+    checkGameOver() {
         if (!isAlive && gameState === GameState.PLAYING) {
             gameState = GameState.GAMEOVER;
-
             const finalScore = this.killScore * 100 + this.timeScore;
-
             const highScore = localStorage.getItem("highScore") || 0;
             if (finalScore > highScore) {
-                localStorage.setItem("highScore", this.score);
+                localStorage.setItem("highScore", finalScore);
                 console.log("New High Score!");
             }
             this.stopGameLoop();
-
-            // delay before gameover to avoid update overide
             setTimeout(() => {
                 this.drawGameOver(finalScore, highScore);
             }, 50);
@@ -422,16 +779,16 @@ class Game {
     }
 
     drawGameOver(finalScore, highScore) {
-        // Fade background
+        // fade background
         this.context.fillStyle = "rgba(0, 0, 0, 0.8)";
         this.context.fillRect(0, 0, canvasWidth, canvasHeight);
 
-        // Text styling
+        // text styling
         this.context.fillStyle = "white";
         this.context.font = "36px monospace";
         this.context.textAlign = "center";
 
-        // Main text
+        // main text
         this.context.fillText(
             "GAME OVER",
             canvasWidth / 2,
@@ -463,6 +820,8 @@ class Game {
         this.context.fillStyle = "black";
         this.context.fillRect(0, 0, canvasWidth, canvasHeight);
 
+        // Draw the wall
+        this.wall.draw();
         // Draw the player
         this.player.draw();
         // Draw the enemy
@@ -475,13 +834,37 @@ class Game {
         this.context.font = "24px monospace";
         this.context.fillText(`Score: ${this.timeScore}`, 10, 30);
         this.context.fillText(`Kills: ${this.killScore}`, 10, 50);
+        this.context.fillText(`Wave: ${this.waveNumber}`, 10, 70);
+
+        this.powerUps.forEach((pu) => pu.draw());
     }
 
     startGameLoop() {
-        this.intervalId = setInterval(() => {
+        const loop = () => {
             this.update();
             this.draw();
-        }, 1000 / 60); // 60 frames per second, using setInterval instead of requestAnimationFrame to avoid player system issues
+            if (isAlive) requestAnimationFrame(loop);
+        };
+        // Existing speed power-up
+        this.powerUps.push(
+            new PowerUp(
+                canvasWidth / 2 - 50,
+                canvasHeight - 36,
+                "speed",
+                this.context
+            )
+        );
+
+        // New jump power-up
+        this.powerUps.push(
+            new PowerUp(
+                canvasWidth / 2 + 50,
+                canvasHeight - 36,
+                "jump",
+                this.context
+            )
+        );
+        requestAnimationFrame(loop);
     }
 
     stopGameLoop() {
@@ -504,14 +887,6 @@ class Game {
 
         // If it's within the distance plus the radius, collision
         var collision = distX <= playerWidth / 2 || distY <= playerHeight / 2;
-        // if (distX <= playerWidth / 2) {
-        //     console.log("Collision detected on X axis");
-        //     return true;
-        // }
-        // if (distY <= playerHeight / 2) {
-        //     console.log("Collision detected on Y axis");
-        //     return true;
-        // }
 
         // Check for collision at corner using Pythagorean theorem
         var dx = distX - playerWidth / 2;
@@ -532,12 +907,99 @@ function restartGame() {
     isAlive = true;
     gameState = "playing";
 
-    // Reset player position and variables
+    // reset player position and variables
     playerX = 100;
     playerY = 100;
     lastKey = null;
 
-    // Create a new game instance
+    // create a new game instance
     game = new Game(context);
     game.startGameLoop();
+}
+
+class WallSection {
+    constructor(x, y, width, height, context, parentWall) {
+        this.x = x;
+        this.y = y;
+        this.width = width;
+        this.height = height;
+        this.context = context;
+        this.health = 100;
+        this.destroyed = false;
+        this.parentWall = parentWall;
+    }
+
+    draw() {
+        if (this.destroyed) return;
+        this.context.fillStyle = "gray";
+        this.context.fillRect(this.x, this.y, this.width, this.height);
+        this.context.strokeStyle = "black";
+        this.context.strokeRect(this.x, this.y, this.width, this.height);
+    }
+
+    takeDamage(amount) {
+        this.health -= amount;
+        if (this.health <= 0 && !this.destroyed) {
+            this.destroyed = true;
+
+            // ✅ Let the wall know to refresh aliveSections
+            this.parentWall.handleSectionDestroyed();
+
+            if (this.parentWall.sections.every((s) => s.destroyed)) {
+                console.log("All walls destroyed! Game over.");
+                isAlive = false;
+            }
+        }
+    }
+}
+
+class Wall {
+    constructor(context, canvasHeight) {
+        this.context = context;
+        this.sections = [];
+
+        const sectionCount = 6;
+        const sectionHeight = canvasHeight / sectionCount;
+        const wallWidth = 40;
+        const wallX = 0;
+
+        for (let i = 0; i < sectionCount; i++) {
+            const y = i * sectionHeight;
+            const section = new WallSection(
+                wallX,
+                y,
+                wallWidth,
+                sectionHeight,
+                context,
+                this
+            );
+            this.sections.push(section);
+        }
+
+        // ✅ Keep a cached array of alive sections
+        this.aliveSections = [...this.sections];
+    }
+
+    draw() {
+        this.sections.forEach((section) => section.draw());
+    }
+
+    // ✅ Update alive section cache when a section dies
+    handleSectionDestroyed() {
+        this.aliveSections = this.sections.filter((s) => !s.destroyed);
+    }
+
+    checkCollision(enemy) {
+        this.aliveSections.forEach((section) => {
+            if (
+                enemy.x - enemy.radius < section.x + section.width &&
+                enemy.x + enemy.radius > section.x &&
+                enemy.y - enemy.radius < section.y + section.height &&
+                enemy.y + enemy.radius > section.y
+            ) {
+                section.takeDamage(20);
+                if (!enemy.isRetreating) enemy.bounceBack();
+            }
+        });
+    }
 }

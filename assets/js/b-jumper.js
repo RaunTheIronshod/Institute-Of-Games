@@ -84,6 +84,7 @@ let playerVelocityX = 0;
 // enemy has a radius but for collision detection we need height and width
 let enemyRadius = 10;
 
+// !!! add keydown into eachother !!!
 // input handling, overkill for this project but allows for more complex input handling later if I decide to continue development
 let lastKey;
 const keys = {
@@ -359,6 +360,9 @@ class PowerUp {
             case "speed":
                 this.context.fillStyle = "green";
                 break;
+            case "jump":
+                this.context.fillStyle = "purple"; // distinct color
+                break;
             default:
                 this.context.fillStyle = "white";
         }
@@ -378,6 +382,14 @@ class PowerUp {
                 setTimeout(() => {
                     player.playerBaseSpeed /= 2;
                     player.playerRunSpeed /= 2;
+                }, this.duration);
+                break;
+
+            case "jump":
+                player.jumpSpeed *= 1.5; // increase jump height by 50%
+
+                setTimeout(() => {
+                    player.jumpSpeed /= 1.5;
                 }, this.duration);
                 break;
         }
@@ -559,6 +571,18 @@ class Game {
         return this.wall.sections.every((section) => section.destroyed);
     }
 
+    spawnPowerUp(x, y) {
+        const types = ["speed", "jump"];
+        const baseChance = 0.2;
+        const waveBonus = 0.9 * this.waveNumber; // +5% per wave
+        const chance = Math.min(0.9, baseChance + waveBonus); // cap at 70%
+
+        if (Math.random() < chance) {
+            const type = types[Math.floor(Math.random() * types.length)];
+            this.powerUps.push(new PowerUp(x, y, type, this.context));
+        }
+    }
+
     spawnWave() {
         this.waveNumber++;
         this.waveActive = true;
@@ -635,6 +659,12 @@ class Game {
                 enemy.update();
             }
             this.wall.checkCollision(enemy);
+
+            // Spawn power-up when enemy dies
+            if (enemy.destroyed && !enemy.powerUpDropped) {
+                this.spawnPowerUp(enemy.x, enemy.y);
+                enemy.powerUpDropped = true; // prevent multiple drops
+            }
         });
 
         // remove destroyed/offscreen enemies
@@ -815,12 +845,22 @@ class Game {
             this.draw();
             if (isAlive) requestAnimationFrame(loop);
         };
-        // Example: spawn near middle of canvas
+        // Existing speed power-up
         this.powerUps.push(
             new PowerUp(
-                canvasWidth / 2,
+                canvasWidth / 2 - 50,
                 canvasHeight - 36,
                 "speed",
+                this.context
+            )
+        );
+
+        // New jump power-up
+        this.powerUps.push(
+            new PowerUp(
+                canvasWidth / 2 + 50,
+                canvasHeight - 36,
+                "jump",
                 this.context
             )
         );

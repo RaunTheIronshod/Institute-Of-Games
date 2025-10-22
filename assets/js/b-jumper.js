@@ -14,6 +14,10 @@ const GameState = {
     GAMEOVER: "gameover",
 };
 
+const FRAME_RATE = 60;
+const WALL_SECTION_DAMAGE = 20;
+const PLAYER_JUMP_SPEED = 15;
+
 let context;
 let game;
 let gameState = GameState.PLAYING;
@@ -163,13 +167,109 @@ class Enemy {
         this.y = y;
         this.radius = radius;
         this.context = context;
+        this.health = 100;
+        this.velocityX = -2; // move left by default
+        this.velocityY = 0;
+        this.isRetreating = false;
+        this.retreatTimer = 0;
     }
 
     draw() {
         this.context.beginPath();
         this.context.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
-        this.context.fillStyle = "red";
+        this.context.fillStyle = this.isRetreating ? "orange" : "red";
         this.context.fill();
+    }
+
+    update() {
+        // handle retreat timer
+        if (this.isRetreating) {
+            this.retreatTimer--;
+            if (this.retreatTimer <= 0) {
+                this.isRetreating = false;
+                this.velocityX = -2; // resume attack direction
+            }
+        }
+
+        // movement
+        this.x += this.velocityX;
+        this.y += this.velocityY;
+    }
+
+    takeDamage(amount) {
+        this.health -= amount;
+        if (this.health <= 0) this.destroyed = true;
+    }
+
+    bounceBack() {
+        this.isRetreating = true;
+        this.retreatTimer = 60; // frames (1 second if running 60fps)
+        this.velocityX = 4; // retreat speed
+        this.takeDamage(10);
+    }
+}
+
+class HomingEnemy extends Enemy {
+    constructor(x, y, radius, context, targetChance = 0.5) {
+        super(x, y, radius, context);
+
+        // Decide target: player or wall
+        this.targetPlayer = Math.random() < targetChance;
+        this.speed = 2; // homing speed
+        this.homingActive = false;
+    }
+
+    update(player, wall) {
+        // Activate homing once enemy is halfway across the screen
+        if (!this.homingActive && this.x < canvasWidth / 2) {
+            this.homingActive = true;
+        }
+
+        if (this.homingActive) {
+            let targetX, targetY;
+
+            if (this.targetPlayer) {
+                targetX = player.x + player.width / 2;
+                targetY = player.y + player.height / 2;
+            } else {
+                // pick a random alive wall section as target
+                const aliveSections = wall.sections.filter((s) => !s.destroyed);
+                if (aliveSections.length === 0) {
+                    targetX = player.x + player.width / 2;
+                    targetY = player.y + player.height / 2;
+                } else {
+                    const targetSection =
+                        aliveSections[
+                            Math.floor(Math.random() * aliveSections.length)
+                        ];
+                    targetX = targetSection.x + targetSection.width / 2;
+                    targetY = targetSection.y + targetSection.height / 2;
+                }
+            }
+
+            // Calculate direction vector toward target
+            const dx = targetX - this.x;
+            const dy = targetY - this.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+
+            if (distance > 0) {
+                this.velocityX = (dx / distance) * this.speed;
+                this.velocityY = (dy / distance) * this.speed;
+            }
+        }
+
+        // Move the enemy
+        this.x += this.velocityX;
+        this.y += this.velocityY;
+
+        // Handle retreat timer from parent
+        if (this.isRetreating) {
+            this.retreatTimer--;
+            if (this.retreatTimer <= 0) {
+                this.isRetreating = false;
+                this.velocityX = this.homingActive ? 0 : -2; // resume normal attack
+            }
+        }
     }
 }
 
@@ -188,6 +288,10 @@ class Player {
         this.context = context;
         this.playerVelocityY = 0;
         this.playerVelocityX = 0;
+        this.isJumping;
+        this.hasJumped;
+        this.isAlive;
+        this.isDashing;
     }
 
     draw() {
@@ -217,9 +321,9 @@ class Player {
         if (keys.a.pressed && keys.d.pressed) {
             // Both keys pressed: last pressed key wins
             this.playerVelocityX = lastKey === "a" ? -speed : speed;
-        } else if (keys.a.pressed) {
+        } else if (keys.a.pressed && lastKey === "a") {
             this.playerVelocityX = -speed;
-        } else if (keys.d.pressed) {
+        } else if (keys.d.pressed && lastKey === "d") {
             this.playerVelocityX = speed;
         } else {
             this.playerVelocityX = 0;
@@ -228,32 +332,37 @@ class Player {
 
         this.x += this.playerVelocityX;
 
-        // Keep player inside canvas
+        // keep player inside canvas
         if (this.x < 0) this.x = 0;
         if (this.x + this.width > canvasWidth)
             this.x = canvasWidth - this.width;
 
-        // Jumping
+        // jumping
         if (keys.space.pressed && !isJumping && !hasJumped) {
             this.playerVelocityY = -this.jumpSpeed;
             isJumping = true;
             hasJumped = true;
         }
 
+        // We have a character drag error while no keys are pressed, character still moves. This is a janky attempt to fix this
         if (
             !keys.a.pressed &&
             !keys.d.pressed &&
             !keys.space.pressed &&
             !keys.shift.pressed
         ) {
-            lastKey = null; // reset lastKey when no movement keys are pressed
-            this.playerVelocityX = 0; // and stop player x movement
+            // reset lastKey when no movement keys are pressed
+            lastKey = null;
+            this.playerVelocityX = 0;
         }
+        return;
     }
 }
 
+let nextBulletId = 0;
 class Bullet {
     constructor(x, y, targetX, targetY, context) {
+        this.id = nextBulletId++;
         this.x = x;
         this.y = y;
         this.radius = 3;
@@ -314,19 +423,65 @@ class Game {
         // add bullet storage
         this.bullets = [];
 
+        // add walls
+        this.wall = new Wall(context, canvasHeight);
+
+        // waves
+        this.waveNumber = 0;
+        this.enemiesPerWave = 5; // starting enemy count
+        this.waveCooldown = 4000; // ms between waves
+        this.waveActive = false;
+        this.lastWaveEnd = Date.now();
+
         // score system
         this.killScore = 0;
         this.timeScore = 0;
         this.lastScoreTime = Date.now();
     }
 
+    allWallsDestroyed() {
+        return this.wall.sections.every((section) => section.destroyed);
+    }
+
+    spawnWave() {
+        this.waveNumber++;
+        this.waveActive = true;
+
+        // scale difficulty: more enemies per wave
+        this.totalEnemiesToSpawn = this.enemiesPerWave + this.waveNumber * 2;
+
+        // spawn delay in milliseconds (smaller = faster)
+        this.spawnDelay = Math.max(150, 800 - this.waveNumber * 50);
+
+        this.spawnedEnemies = 0;
+        this.nextEnemySpawnTime = Date.now() + this.spawnDelay;
+
+        console.log(
+            `Wave ${this.waveNumber} incoming! (${this.totalEnemiesToSpawn} enemies)`
+        );
+    }
+
     spawnEnemy() {
-        // random x position within canvas width using enemyRadius to prevent spawning off screen
-        const x = Math.random() * (canvasWidth - enemyRadius * 2) + enemyRadius;
-        // spawn them at the top for now
-        const y = -enemyRadius * 2;
-        const enemy = new Enemy(x, y, enemyRadius, this.context);
+        const x = canvasWidth + enemyRadius * 2;
+        const y =
+            Math.random() * (canvasHeight - enemyRadius * 2) + enemyRadius;
+
+        let enemy;
+
+        // only start spawning homing enemies from certain wave
+        if (this.waveNumber >= 2 && Math.random() < 0.2) {
+            // 20% chance
+            enemy = new HomingEnemy(x, y, enemyRadius, this.context);
+        } else {
+            enemy = new Enemy(x, y, enemyRadius, this.context);
+        }
+
         this.enemies.push(enemy);
+
+        // adjust normal enemies speed per wave
+        if (!(enemy instanceof HomingEnemy)) {
+            enemy.velocityX -= this.waveNumber * 0.2;
+        }
     }
 
     fireBullet(targetX, targetY) {
@@ -341,80 +496,109 @@ class Game {
     }
 
     update() {
+        this.updatePlayer();
+        this.updateEnemies();
+        this.updateBullets();
+        this.handleCollisions();
+        this.handleWaves();
+        this.updateScore();
+        this.checkGameOver();
+    }
+
+    updatePlayer() {
         this.player.update();
+    }
 
-        const currentTime = Date.now();
-
-        // survival points / score increase over time
-        if (currentTime - this.lastScoreTime >= 1000) {
-            // increase score by 1 every second
-            this.timeScore += 1;
-            this.lastScoreTime = currentTime;
-        }
-
-        // spawn enemies at intervals
-        if (currentTime - this.lastSpawnTime > this.spawnInterval) {
-            this.spawnEnemy();
-            this.lastSpawnTime = currentTime;
-        }
-
-        // !!! Poor performance, use id based removal later if continuing development as forEach will scale poorly !!!
-        // run through our list of enemies for collisions
+    updateEnemies() {
         this.enemies.forEach((enemy) => {
-            this.playerenemyColliding(enemy, this.player);
-        });
-
-        // update enemy movement
-        this.enemies.forEach((enemy) => {
-            // move enemy downwards
-            enemy.y += 2;
-        });
-
-        // remove enemies that have gone off-screen
-        this.enemies = this.enemies.filter(
-            (enemy) => enemy.y < canvasHeight + enemy.radius
-        );
-
-        // update bullets
-        this.bullets.forEach((bullet, bulletIndex) => {
-            bullet.update();
-            // Remove bullet if it goes off-screen
-            if (bullet.isOffScreen(canvasWidth, canvasHeight)) {
-                this.bullets.splice(bulletIndex, 1);
-                return;
+            if (enemy instanceof HomingEnemy) {
+                enemy.update(this.player, this.wall);
+            } else {
+                enemy.update();
             }
+            this.wall.checkCollision(enemy);
+        });
 
-            // check for enemy and bullet collisions
-            this.enemies.forEach((enemy, enemyIndex) => {
+        // remove destroyed/offscreen enemies
+        this.enemies = this.enemies.filter(
+            (enemy) => !enemy.destroyed && enemy.x + enemy.radius > 0
+        );
+    }
+
+    updateBullets() {
+        this.bullets.forEach((bullet) => bullet.update());
+        this.bullets = this.bullets.filter(
+            (bullet) => !bullet.isOffScreen(canvasWidth, canvasHeight)
+        );
+    }
+
+    handleCollisions() {
+        // bullets vs enemies
+        const remainingEnemies = [];
+        this.enemies.forEach((enemy) => {
+            let hit = false;
+            this.bullets.forEach((bullet) => {
                 const dx = bullet.x - enemy.x;
                 const dy = bullet.y - enemy.y;
                 const distance = Math.sqrt(dx * dx + dy * dy);
-
-                // check if the distance between the bullet and the enemy is less than the sum of their radii (meaning a collision)
                 if (distance < bullet.radius + enemy.radius) {
-                    // remove enemy and bullet on collision
-                    this.enemies.splice(enemyIndex, 1);
-                    this.bullets.splice(bulletIndex, 1);
-                    this.killScore += 1; // increase kill score
-                    console.log("Enemy hit! Score;", this.killScore);
+                    hit = true;
+                    this.killScore++;
                 }
             });
+            if (!hit) remainingEnemies.push(enemy);
         });
+        this.enemies = remainingEnemies;
 
-        // check if player is alive
+        // player vs enemies
+        this.enemies.forEach((enemy) => {
+            this.playerenemyColliding(enemy, this.player);
+        });
+    }
+
+    handleWaves() {
+        const now = Date.now();
+
+        if (!this.waveActive && now - this.lastWaveEnd > this.waveCooldown) {
+            this.spawnWave();
+        }
+
+        if (this.waveActive && this.spawnedEnemies < this.totalEnemiesToSpawn) {
+            if (now >= this.nextEnemySpawnTime) {
+                this.spawnEnemy();
+                this.spawnedEnemies++;
+                this.nextEnemySpawnTime = now + this.spawnDelay;
+            }
+        }
+
+        if (
+            this.waveActive &&
+            this.spawnedEnemies >= this.totalEnemiesToSpawn &&
+            this.enemies.length === 0
+        ) {
+            this.waveActive = false;
+            this.lastWaveEnd = now;
+        }
+    }
+
+    updateScore() {
+        const currentTime = Date.now();
+        if (currentTime - this.lastScoreTime >= 1000) {
+            this.timeScore++;
+            this.lastScoreTime = currentTime;
+        }
+    }
+
+    checkGameOver() {
         if (!isAlive && gameState === GameState.PLAYING) {
             gameState = GameState.GAMEOVER;
-
             const finalScore = this.killScore * 100 + this.timeScore;
-
             const highScore = localStorage.getItem("highScore") || 0;
             if (finalScore > highScore) {
-                localStorage.setItem("highScore", this.score);
+                localStorage.setItem("highScore", finalScore);
                 console.log("New High Score!");
             }
             this.stopGameLoop();
-
-            // delay before gameover to avoid update overide
             setTimeout(() => {
                 this.drawGameOver(finalScore, highScore);
             }, 50);
@@ -422,16 +606,16 @@ class Game {
     }
 
     drawGameOver(finalScore, highScore) {
-        // Fade background
+        // fade background
         this.context.fillStyle = "rgba(0, 0, 0, 0.8)";
         this.context.fillRect(0, 0, canvasWidth, canvasHeight);
 
-        // Text styling
+        // text styling
         this.context.fillStyle = "white";
         this.context.font = "36px monospace";
         this.context.textAlign = "center";
 
-        // Main text
+        // main text
         this.context.fillText(
             "GAME OVER",
             canvasWidth / 2,
@@ -463,6 +647,8 @@ class Game {
         this.context.fillStyle = "black";
         this.context.fillRect(0, 0, canvasWidth, canvasHeight);
 
+        // Draw the wall
+        this.wall.draw();
         // Draw the player
         this.player.draw();
         // Draw the enemy
@@ -475,13 +661,16 @@ class Game {
         this.context.font = "24px monospace";
         this.context.fillText(`Score: ${this.timeScore}`, 10, 30);
         this.context.fillText(`Kills: ${this.killScore}`, 10, 50);
+        this.context.fillText(`Wave: ${this.waveNumber}`, 10, 70);
     }
 
     startGameLoop() {
-        this.intervalId = setInterval(() => {
+        const loop = () => {
             this.update();
             this.draw();
-        }, 1000 / 60); // 60 frames per second, using setInterval instead of requestAnimationFrame to avoid player system issues
+            if (isAlive) requestAnimationFrame(loop);
+        };
+        requestAnimationFrame(loop);
     }
 
     stopGameLoop() {
@@ -504,14 +693,6 @@ class Game {
 
         // If it's within the distance plus the radius, collision
         var collision = distX <= playerWidth / 2 || distY <= playerHeight / 2;
-        // if (distX <= playerWidth / 2) {
-        //     console.log("Collision detected on X axis");
-        //     return true;
-        // }
-        // if (distY <= playerHeight / 2) {
-        //     console.log("Collision detected on Y axis");
-        //     return true;
-        // }
 
         // Check for collision at corner using Pythagorean theorem
         var dx = distX - playerWidth / 2;
@@ -532,12 +713,98 @@ function restartGame() {
     isAlive = true;
     gameState = "playing";
 
-    // Reset player position and variables
+    // reset player position and variables
     playerX = 100;
     playerY = 100;
     lastKey = null;
 
-    // Create a new game instance
+    // create a new game instance
     game = new Game(context);
     game.startGameLoop();
+}
+
+class WallSection {
+    constructor(x, y, width, height, context, parentWall) {
+        this.x = x;
+        this.y = y;
+        this.width = width;
+        this.height = height;
+        this.context = context;
+        this.health = 100;
+        this.destroyed = false;
+        this.parentWall = parentWall;
+    }
+
+    draw() {
+        if (this.destroyed) return;
+        this.context.fillStyle = "gray";
+        this.context.fillRect(this.x, this.y, this.width, this.height);
+        this.context.strokeStyle = "black";
+        this.context.strokeRect(this.x, this.y, this.width, this.height);
+    }
+
+    takeDamage(amount) {
+        this.health -= amount;
+        if (this.health <= 0 && !this.destroyed) {
+            this.destroyed = true;
+
+            // check if this was the last wall section
+            if (this.parentWall.sections.every((s) => s.destroyed)) {
+                console.log("All walls destroyed! Game over.");
+                isAlive = false;
+            }
+        }
+    }
+}
+
+class Wall {
+    constructor(context, canvasHeight) {
+        this.context = context;
+        this.sections = [];
+
+        const sectionCount = 6;
+        const sectionHeight = canvasHeight / sectionCount;
+        // thickness of the wall
+        const wallWidth = 40;
+        // flush against the left side
+        const wallX = 0;
+
+        for (let i = 0; i < sectionCount; i++) {
+            const y = i * sectionHeight;
+            this.sections.push(
+                new WallSection(
+                    wallX,
+                    y,
+                    wallWidth,
+                    sectionHeight,
+                    context,
+                    this
+                )
+            );
+        }
+    }
+
+    draw() {
+        this.sections.forEach((section) => section.draw());
+    }
+
+    // later, we’ll use this for collisions with enemies
+    checkCollision(enemy) {
+        this.sections.forEach((section) => {
+            if (
+                !section.destroyed &&
+                enemy.x - enemy.radius < section.x + section.width &&
+                enemy.x + enemy.radius > section.x &&
+                enemy.y - enemy.radius < section.y + section.height &&
+                enemy.y + enemy.radius > section.y
+            ) {
+                // collision detected
+                section.takeDamage(20);
+                // optional flag to stop or bounce
+                if (!enemy.isRetreating) {
+                    enemy.bounceBack();
+                }
+            }
+        });
+    }
 }

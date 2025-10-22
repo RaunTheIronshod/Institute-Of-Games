@@ -14,6 +14,14 @@ const GameState = {
     GAMEOVER: "gameover",
 };
 
+const EnemyState = {
+    SPAWNING: "spawning",
+    MOVING: "moving",
+    ATTACKING: "attacking",
+    RETREATING: "retreating",
+    DEAD: "dead",
+};
+
 const FRAME_RATE = 60;
 const WALL_SECTION_DAMAGE = 20;
 const PLAYER_JUMP_SPEED = 15;
@@ -168,107 +176,221 @@ class Enemy {
         this.radius = radius;
         this.context = context;
         this.health = 100;
-        this.velocityX = -2; // move left by default
+        this.speed = 2;
+        this.state = EnemyState.SPAWNING;
+        this.velocityX = -this.speed;
         this.velocityY = 0;
-        this.isRetreating = false;
         this.retreatTimer = 0;
+    }
+
+    setState(newState) {
+        if (this.state === newState) return;
+        this.state = newState;
+
+        switch (newState) {
+            case EnemyState.SPAWNING:
+                this.velocityX = -this.speed;
+                break;
+            case EnemyState.MOVING:
+                this.velocityX = -this.speed;
+                this.velocityY = 0;
+                break;
+            case EnemyState.RETREATING:
+                this.retreatTimer = 60;
+                this.velocityX = 4;
+                break;
+            case EnemyState.DEAD:
+                this.destroyed = true;
+                break;
+        }
+    }
+
+    takeDamage(amount) {
+        this.health -= amount;
+        if (this.health <= 0) {
+            this.setState(EnemyState.DEAD);
+        }
+    }
+
+    bounceBack() {
+        if (this.state !== EnemyState.RETREATING) {
+            this.setState(EnemyState.RETREATING);
+            this.takeDamage(10);
+        }
+    }
+
+    update() {
+        switch (this.state) {
+            case EnemyState.SPAWNING:
+                this.setState(EnemyState.MOVING);
+                break;
+
+            case EnemyState.MOVING:
+                this.x += this.velocityX;
+                this.y += this.velocityY;
+                break;
+
+            case EnemyState.RETREATING:
+                this.x += this.velocityX;
+                this.retreatTimer--;
+                if (this.retreatTimer <= 0) {
+                    this.setState(EnemyState.MOVING);
+                }
+                break;
+
+            case EnemyState.DEAD:
+                this.destroyed = true;
+                break;
+        }
     }
 
     draw() {
         this.context.beginPath();
         this.context.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
-        this.context.fillStyle = this.isRetreating ? "orange" : "red";
-        this.context.fill();
-    }
 
-    update() {
-        // handle retreat timer
-        if (this.isRetreating) {
-            this.retreatTimer--;
-            if (this.retreatTimer <= 0) {
-                this.isRetreating = false;
-                this.velocityX = -2; // resume attack direction
-            }
+        switch (this.state) {
+            case EnemyState.MOVING:
+                this.context.fillStyle = "red";
+                break;
+            case EnemyState.RETREATING:
+                this.context.fillStyle = "orange";
+                break;
+            case EnemyState.DEAD:
+                this.context.fillStyle = "gray";
+                break;
+            default:
+                this.context.fillStyle = "purple";
+                break;
         }
 
-        // movement
-        this.x += this.velocityX;
-        this.y += this.velocityY;
-    }
-
-    takeDamage(amount) {
-        this.health -= amount;
-        if (this.health <= 0) this.destroyed = true;
-    }
-
-    bounceBack() {
-        this.isRetreating = true;
-        this.retreatTimer = 60; // frames (1 second if running 60fps)
-        this.velocityX = 4; // retreat speed
-        this.takeDamage(10);
+        this.context.fill();
     }
 }
 
 class HomingEnemy extends Enemy {
-    constructor(x, y, radius, context, targetChance = 0.5) {
+    constructor(x, y, speed, radius, context, targetPlayer = false) {
         super(x, y, radius, context);
-
-        // Decide target: player or wall
-        this.targetPlayer = Math.random() < targetChance;
-        this.speed = 2; // homing speed
+        this.speed = speed;
+        this.targetPlayer = targetPlayer;
         this.homingActive = false;
+        this.currentTarget = null; // store chosen target once
     }
 
     update(player, wall) {
-        // Activate homing once enemy is halfway across the screen
-        if (!this.homingActive && this.x < canvasWidth / 2) {
+        // Activate homing once halfway across screen
+        if (!this.homingActive && this.x < canvas.width / 2) {
             this.homingActive = true;
-        }
 
-        if (this.homingActive) {
-            let targetX, targetY;
-
+            // pick target when activating
             if (this.targetPlayer) {
-                targetX = player.x + player.width / 2;
-                targetY = player.y + player.height / 2;
+                this.currentTarget = player;
             } else {
-                // pick a random alive wall section as target
-                const aliveSections = wall.sections.filter((s) => !s.destroyed);
-                if (aliveSections.length === 0) {
-                    targetX = player.x + player.width / 2;
-                    targetY = player.y + player.height / 2;
+                const alive = wall.aliveSections;
+                if (alive.length > 0) {
+                    this.currentTarget =
+                        alive[Math.floor(Math.random() * alive.length)];
                 } else {
-                    const targetSection =
-                        aliveSections[
-                            Math.floor(Math.random() * aliveSections.length)
-                        ];
-                    targetX = targetSection.x + targetSection.width / 2;
-                    targetY = targetSection.y + targetSection.height / 2;
+                    this.currentTarget = player; // fallback
                 }
             }
-
-            // Calculate direction vector toward target
-            const dx = targetX - this.x;
-            const dy = targetY - this.y;
-            const distance = Math.sqrt(dx * dx + dy * dy);
-
-            if (distance > 0) {
-                this.velocityX = (dx / distance) * this.speed;
-                this.velocityY = (dy / distance) * this.speed;
-            }
         }
 
-        // Move the enemy
-        this.x += this.velocityX;
-        this.y += this.velocityY;
+        switch (this.state) {
+            case EnemyState.SPAWNING:
+                this.setState(EnemyState.MOVING);
+                break;
 
-        // Handle retreat timer from parent
-        if (this.isRetreating) {
-            this.retreatTimer--;
-            if (this.retreatTimer <= 0) {
-                this.isRetreating = false;
-                this.velocityX = this.homingActive ? 0 : -2; // resume normal attack
-            }
+            case EnemyState.MOVING:
+                if (this.homingActive && this.currentTarget) {
+                    const targetX =
+                        this.currentTarget.x +
+                        (this.currentTarget.width ?? 0) / 2;
+                    const targetY =
+                        this.currentTarget.y +
+                        (this.currentTarget.height ?? 0) / 2;
+
+                    const dx = targetX - this.x;
+                    const dy = targetY - this.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+
+                    if (distance > 0) {
+                        this.velocityX = (dx / distance) * this.speed;
+                        this.velocityY = (dy / distance) * this.speed;
+                    }
+                }
+
+                this.x += this.velocityX;
+                this.y += this.velocityY;
+                break;
+
+            case EnemyState.RETREATING:
+                this.x += this.velocityX;
+                this.retreatTimer--;
+                if (this.retreatTimer <= 0) {
+                    this.setState(EnemyState.MOVING);
+                    this.homingActive = false; // reset so they can pick new target later
+                    this.currentTarget = null;
+                }
+                break;
+
+            case EnemyState.DEAD:
+                this.destroyed = true;
+                break;
+        }
+    }
+}
+
+class PowerUp {
+    constructor(x, y, type, context, duration = 10000) {
+        this.x = x;
+        this.y = y;
+        this.width = 16; // size for collision
+        this.height = 16;
+        this.type = type; // e.g., "speed"
+        this.context = context;
+        this.active = true;
+        this.duration = duration; // milliseconds
+    }
+
+    draw() {
+        if (!this.active) return;
+
+        switch (this.type) {
+            case "speed":
+                this.context.fillStyle = "green";
+                break;
+            default:
+                this.context.fillStyle = "white";
+        }
+
+        this.context.fillRect(this.x, this.y, this.width, this.height);
+    }
+
+    apply(player) {
+        if (!this.active) return;
+        this.active = false;
+
+        switch (this.type) {
+            case "speed":
+                player.playerBaseSpeed *= 2;
+                player.playerRunSpeed *= 2;
+
+                setTimeout(() => {
+                    player.playerBaseSpeed /= 2;
+                    player.playerRunSpeed /= 2;
+                }, this.duration);
+                break;
+        }
+    }
+
+    checkCollision(player) {
+        if (
+            player.x < this.x + this.width &&
+            player.x + player.width > this.x &&
+            player.y < this.y + this.height &&
+            player.y + player.height > this.y
+        ) {
+            this.apply(player);
         }
     }
 }
@@ -299,9 +421,35 @@ class Player {
         this.context.fillRect(this.x, this.y, this.width, this.height);
     }
 
-    update() {
+    handleInput(keys, lastKey) {
+        // Horizontal movement
+        const speed = keys.shift.pressed
+            ? this.playerRunSpeed
+            : this.playerBaseSpeed;
+
+        if (keys.a.pressed && keys.d.pressed) {
+            this.playerVelocityX = lastKey === "a" ? -speed : speed;
+        } else if (keys.a.pressed) {
+            this.playerVelocityX = -speed;
+        } else if (keys.d.pressed) {
+            this.playerVelocityX = speed;
+        } else {
+            this.playerVelocityX = 0;
+        }
+
+        // Jumping
+        if (keys.space.pressed && !isJumping && !hasJumped) {
+            this.playerVelocityY = -this.jumpSpeed;
+            isJumping = true;
+            hasJumped = true;
+        }
+    }
+
+    updatePosition() {
         // Apply gravity
         this.playerVelocityY += this.gravity;
+
+        this.x += this.playerVelocityX;
         this.y += this.playerVelocityY;
 
         // Ground check
@@ -312,50 +460,15 @@ class Player {
             hasJumped = false;
         }
 
-        // Horizontal speed
-        const speed = keys.shift.pressed
-            ? this.playerRunSpeed
-            : this.playerBaseSpeed;
-
-        // Horizontal movement with lastKey handling
-        if (keys.a.pressed && keys.d.pressed) {
-            // Both keys pressed: last pressed key wins
-            this.playerVelocityX = lastKey === "a" ? -speed : speed;
-        } else if (keys.a.pressed && lastKey === "a") {
-            this.playerVelocityX = -speed;
-        } else if (keys.d.pressed && lastKey === "d") {
-            this.playerVelocityX = speed;
-        } else {
-            this.playerVelocityX = 0;
-            lastKey = null; // reset lastKey when no movement keys are pressed
-        }
-
-        this.x += this.playerVelocityX;
-
-        // keep player inside canvas
+        // Keep inside bounds
         if (this.x < 0) this.x = 0;
-        if (this.x + this.width > canvasWidth)
+        if (this.x + this.width > canvasWidth) {
             this.x = canvasWidth - this.width;
-
-        // jumping
-        if (keys.space.pressed && !isJumping && !hasJumped) {
-            this.playerVelocityY = -this.jumpSpeed;
-            isJumping = true;
-            hasJumped = true;
         }
-
-        // We have a character drag error while no keys are pressed, character still moves. This is a janky attempt to fix this
-        if (
-            !keys.a.pressed &&
-            !keys.d.pressed &&
-            !keys.space.pressed &&
-            !keys.shift.pressed
-        ) {
-            // reset lastKey when no movement keys are pressed
-            lastKey = null;
-            this.playerVelocityX = 0;
-        }
-        return;
+    }
+    updatePlayer() {
+        this.player.handleInput(keys, lastKey);
+        this.player.updatePosition();
     }
 }
 
@@ -426,6 +539,9 @@ class Game {
         // add walls
         this.wall = new Wall(context, canvasHeight);
 
+        // powerups
+        this.powerUps = [];
+
         // waves
         this.waveNumber = 0;
         this.enemiesPerWave = 5; // starting enemy count
@@ -471,7 +587,7 @@ class Game {
         // only start spawning homing enemies from certain wave
         if (this.waveNumber >= 2 && Math.random() < 0.2) {
             // 20% chance
-            enemy = new HomingEnemy(x, y, enemyRadius, this.context);
+            enemy = new HomingEnemy(x, y, 2, enemyRadius, this.context);
         } else {
             enemy = new Enemy(x, y, enemyRadius, this.context);
         }
@@ -503,10 +619,12 @@ class Game {
         this.handleWaves();
         this.updateScore();
         this.checkGameOver();
+        this.powerUps.forEach((pu) => pu.checkCollision(this.player));
     }
 
     updatePlayer() {
-        this.player.update();
+        this.player.handleInput(keys, lastKey);
+        this.player.updatePosition();
     }
 
     updateEnemies() {
@@ -534,26 +652,51 @@ class Game {
 
     handleCollisions() {
         // bullets vs enemies
-        const remainingEnemies = [];
         this.enemies.forEach((enemy) => {
-            let hit = false;
             this.bullets.forEach((bullet) => {
                 const dx = bullet.x - enemy.x;
                 const dy = bullet.y - enemy.y;
                 const distance = Math.sqrt(dx * dx + dy * dy);
+
                 if (distance < bullet.radius + enemy.radius) {
-                    hit = true;
+                    enemy.takeDamage(50);
                     this.killScore++;
+                    bullet.destroyed = true;
+
+                    // ✅ mark enemy destroyed if dead
+                    if (enemy.health <= 0) {
+                        enemy.destroyed = true;
+                    }
                 }
             });
-            if (!hit) remainingEnemies.push(enemy);
         });
-        this.enemies = remainingEnemies;
+
+        // bullets vs wall
+        this.bullets.forEach((bullet) => {
+            this.wall.sections.forEach((section) => {
+                if (
+                    !section.destroyed &&
+                    bullet.x + bullet.radius > section.x &&
+                    bullet.x - bullet.radius < section.x + section.width &&
+                    bullet.y + bullet.radius > section.y &&
+                    bullet.y - bullet.radius < section.y + section.height
+                ) {
+                    section.takeDamage(10);
+                    bullet.destroyed = true;
+                }
+            });
+        });
 
         // player vs enemies
         this.enemies.forEach((enemy) => {
             this.playerenemyColliding(enemy, this.player);
         });
+
+        // ✅ cleanup phase (only once)
+        this.bullets = this.bullets.filter(
+            (b) => !b.isOffScreen(canvasWidth, canvasHeight) && !b.destroyed
+        );
+        this.enemies = this.enemies.filter((enemy) => !enemy.destroyed);
     }
 
     handleWaves() {
@@ -662,6 +805,8 @@ class Game {
         this.context.fillText(`Score: ${this.timeScore}`, 10, 30);
         this.context.fillText(`Kills: ${this.killScore}`, 10, 50);
         this.context.fillText(`Wave: ${this.waveNumber}`, 10, 70);
+
+        this.powerUps.forEach((pu) => pu.draw());
     }
 
     startGameLoop() {
@@ -670,6 +815,15 @@ class Game {
             this.draw();
             if (isAlive) requestAnimationFrame(loop);
         };
+        // Example: spawn near middle of canvas
+        this.powerUps.push(
+            new PowerUp(
+                canvasWidth / 2,
+                canvasHeight - 36,
+                "speed",
+                this.context
+            )
+        );
         requestAnimationFrame(loop);
     }
 
@@ -748,7 +902,9 @@ class WallSection {
         if (this.health <= 0 && !this.destroyed) {
             this.destroyed = true;
 
-            // check if this was the last wall section
+            // ✅ Let the wall know to refresh aliveSections
+            this.parentWall.handleSectionDestroyed();
+
             if (this.parentWall.sections.every((s) => s.destroyed)) {
                 console.log("All walls destroyed! Game over.");
                 isAlive = false;
@@ -764,46 +920,45 @@ class Wall {
 
         const sectionCount = 6;
         const sectionHeight = canvasHeight / sectionCount;
-        // thickness of the wall
         const wallWidth = 40;
-        // flush against the left side
         const wallX = 0;
 
         for (let i = 0; i < sectionCount; i++) {
             const y = i * sectionHeight;
-            this.sections.push(
-                new WallSection(
-                    wallX,
-                    y,
-                    wallWidth,
-                    sectionHeight,
-                    context,
-                    this
-                )
+            const section = new WallSection(
+                wallX,
+                y,
+                wallWidth,
+                sectionHeight,
+                context,
+                this
             );
+            this.sections.push(section);
         }
+
+        // ✅ Keep a cached array of alive sections
+        this.aliveSections = [...this.sections];
     }
 
     draw() {
         this.sections.forEach((section) => section.draw());
     }
 
-    // later, we’ll use this for collisions with enemies
+    // ✅ Update alive section cache when a section dies
+    handleSectionDestroyed() {
+        this.aliveSections = this.sections.filter((s) => !s.destroyed);
+    }
+
     checkCollision(enemy) {
-        this.sections.forEach((section) => {
+        this.aliveSections.forEach((section) => {
             if (
-                !section.destroyed &&
                 enemy.x - enemy.radius < section.x + section.width &&
                 enemy.x + enemy.radius > section.x &&
                 enemy.y - enemy.radius < section.y + section.height &&
                 enemy.y + enemy.radius > section.y
             ) {
-                // collision detected
                 section.takeDamage(20);
-                // optional flag to stop or bounce
-                if (!enemy.isRetreating) {
-                    enemy.bounceBack();
-                }
+                if (!enemy.isRetreating) enemy.bounceBack();
             }
         });
     }

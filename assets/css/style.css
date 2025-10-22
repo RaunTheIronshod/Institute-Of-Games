@@ -1,0 +1,41 @@
+h1 {
+    text-align: center;
+    font-family: Arial, sans-serif;
+}
+
+.div.button-container {
+    display: flex;
+    justify-content: center;
+    margin-top: 20px;
+    width: 100%;
+}
+
+.button {
+    padding: 0;
+    border: none;
+    background-color: transparent;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 200px;
+    height: 200px;
+    background-repeat: no-repeat;
+    background-size: cover;
+}
+
+.button:hover {
+    background-color: #45a049;
+}
+
+#button1 {
+    background-image: url("button1_image.jpg");
+}
+
+#button2 {
+    background-image: url("button2_image.jpg");
+}
+
+#button3 {
+    background-image: url("button3_image.jpg");
+}

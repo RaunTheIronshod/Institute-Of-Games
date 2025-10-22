@@ -6,6 +6,7 @@ constructor(game){
   this.x = this.game.width * 0.5 - this.width * 0.5;
   this.y = this.game.height - this.height;
   this.speed = 10;
+  this.lives = 3;
 }
 draw(context){
   context.fillRect(this.x, this.y, this.width, this.height);
@@ -22,6 +23,12 @@ shoot(){
   const projectile = this.game.getProjectile();
   if (projectile) projectile.start(this.x + this.width * 0.5, this.y)
  }
+restart(){
+  this.x = this.game.width * 0.5 - this.width * 0.5;
+  this.y = this.game.height - this.height;
+  this.lives = 3;
+
+}
 }
 class Projectile {
   constructor(){
@@ -77,9 +84,16 @@ update(x, y){
     if (!projectile.free && this.game.checkCollision(this, projectile)){
       this.markedForDeletion = true;
       projectile.reset();
-      this.game.score++;
+      if (!this.game.gameOver) this.game.score++;
     }
   });
+  // check Collision enemies and player
+  if (this.game.checkCollision(this, this.game.player)){
+    this.markedForDeletion = true;
+    if (this.game.gameOver && this.game.score > 0) this.game.score--;
+    this.game.player.lives--;
+    if (this.game.player.lives < 1) this.game.gameOver = true;
+  }
   //lose condition
   if (this.y + this.height > this.game.height){
     this.game.gameOver = true;
@@ -160,6 +174,7 @@ class Game {
     window.addEventListener('keydown', e => {
       if (this.keys.indexOf(e.key) === -1) this.keys.push(e.key);
       if (e.key === '1') this.player.shoot();
+      if (e.key === 'r') this.restart();
     });
     window.addEventListener('keyup', e => {
       const index = this.keys.indexOf(e.key)
@@ -181,6 +196,7 @@ class Game {
         this.newWave();
         this.waveCount++;
         wave.nextWaveTrigger = true;
+        this.player.lives++;
       }
     })
   }
@@ -212,17 +228,35 @@ class Game {
     context.shadowColor = 'black';
     context.fillText('Score: ' + this.score, 20, 40);
     context.fillText('Wave: ' + this.waveCount, 20, 80);
+    for (let i = 0; i < this.player.lives; i++){
+      context.fillRect(20 + 10 * i,100,5,20);
+    }
     if (this.gameOver){
       context.textAlign = 'center';
       context.font = '100px Impact';
       context.fillText('GAME OVER!', this.width * 0.5, this.height * 0.5)
+      context.font = '20px Impact';
+      context.fillText('Press R to restart!', this.width * 0.5, this.height * 0.5 + 30);
     }
     context.restore();
   }
   newWave(){
-    this.columns++;
-    this.rows++;
+    if (Math.random() < 0.5 && this.columns + this.enemySize < this.width * 0.8){
+      this.columns++;
+    } else if (this.rows * this.enemySize < this.height * 0.6) {
+      this.rows++;
+    }
     this.waves.push(new Wave(this));
+  }
+  restart(){
+    this.player.restart();
+    this.columns = 2;
+    this.rows = 2;
+    this.waves = [];
+    this.waves.push(new Wave(this));
+    this.waveCount = 1;
+    this.score = 0;
+    this.gameOver = false;
   }
 }
 

@@ -220,12 +220,6 @@ class Game {
         this.height = this.canvas.height;
         this.keys = [];
         this.player = new Player(this);
-    constructor(canvas) {
-        this.canvas = canvas;
-        this.width = this.canvas.width;
-        this.height = this.canvas.height;
-        this.keys = [];
-        this.player = new Player(this);
 
         this.projectilesPool = [];
         this.numberOfProjectiles = 10;
@@ -360,14 +354,6 @@ window.addEventListener("load", function () {
     ctx.lineWidth = 1;
     ctx.font = "30px Impact";
 
-    const game = new Game(canvas);
-
-    function animate() {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        game.render(ctx);
-        window.requestAnimationFrame(animate);
-    }
-    animate();
     const game = new Game(canvas);
 
     function animate() {

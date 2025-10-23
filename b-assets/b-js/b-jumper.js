@@ -39,7 +39,7 @@ window.onload = function () {
     background = new Background(
         canvasWidth,
         canvasHeight,
-        "/b-assets/b-images/Background.png"
+        "/b-assets/b-images/background.png"
     );
 
     // create new game instance

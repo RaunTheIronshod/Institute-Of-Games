@@ -39,7 +39,7 @@ window.onload = function () {
     background = new Background(
         canvasWidth,
         canvasHeight,
-        "../b-assets/b-images/Background.png"
+        "/b-assets/b-images/Background.png"
     );
 
     // create new game instance
@@ -1372,7 +1372,7 @@ class Game {
 
     draw() {
         // Clear the canvas before drawing
-        // this.context.clearRect(0, 0, canvasWidth, canvasHeight);
+        this.context.clearRect(0, 0, canvasWidth, canvasHeight);
 
         // draw the pre-rendered background
         background.draw(this.context);

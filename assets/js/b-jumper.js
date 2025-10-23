@@ -1,12 +1,3 @@
-// the general collision detection in this game is badly optimised and will not scale well,
-// we are searching forEach rather than using ids to remove objects.
-// Once the lists becomes sufficiently large this will create performance issues.
-
-// Id's for bullets and enemies should be implemented if this game is to be continued
-// Along with spatial partitioning for collision detection and object pooling
-
-// Be better
-
 const GameState = {
     MENU: "menu",
     PLAYING: "playing",
@@ -21,10 +12,6 @@ const EnemyState = {
     RETREATING: "retreating",
     DEAD: "dead",
 };
-
-const FRAME_RATE = 60;
-const WALL_SECTION_DAMAGE = 20;
-const PLAYER_JUMP_SPEED = 15;
 
 let context;
 let game;
@@ -62,7 +49,7 @@ let playerBaseSpeed = 1;
 let playerSpeed = playerBaseSpeed;
 let playerRunSpeed = 2;
 let gravity = 0.4;
-let jumpSpeed = 15;
+let jumpSpeed = 8;
 let dashSpeed = 40;
 
 // bools
@@ -72,8 +59,8 @@ let isAlive;
 let isDashing;
 
 // player dimensions
-let playerHeight = 20;
-let playerWidth = 8;
+let playerHeight = 30;
+let playerWidth = 12;
 
 // player default position and velocity
 let playerX = 100;
@@ -84,7 +71,6 @@ let playerVelocityX = 0;
 // enemy has a radius but for collision detection we need height and width
 let enemyRadius = 10;
 
-// !!! add keydown into eachother !!!
 // input handling, overkill for this project but allows for more complex input handling later if I decide to continue development
 let lastKey;
 const keys = {
@@ -246,25 +232,20 @@ class Enemy {
     }
 
     draw() {
-        this.context.beginPath();
-        this.context.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
-
         switch (this.state) {
             case EnemyState.MOVING:
-                this.context.fillStyle = "red";
+                this.evilAngryFace();
                 break;
             case EnemyState.RETREATING:
-                this.context.fillStyle = "orange";
+                this.drawAngryFace();
                 break;
             case EnemyState.DEAD:
-                this.context.fillStyle = "gray";
+                this.drawDeadFace();
                 break;
             default:
-                this.context.fillStyle = "purple";
+                this.drawSurprisedFace();
                 break;
         }
-
-        this.context.fill();
     }
 }
 
@@ -345,29 +326,84 @@ class PowerUp {
     constructor(x, y, type, context, duration = 10000) {
         this.x = x;
         this.y = y;
-        this.width = 16; // size for collision
-        this.height = 16;
-        this.type = type; // e.g., "speed"
+        this.width = 32; // doubled
+        this.height = 32; // doubled
+        this.type = type;
         this.context = context;
         this.active = true;
-        this.duration = duration; // milliseconds
+        this.duration = duration;
+
+        this.velocityY = 0;
+        this.gravity = 0.5;
+        this.floorY = canvasHeight - this.height;
+    }
+
+    update() {
+        if (!this.active) return;
+        this.velocityY += this.gravity;
+        this.y += this.velocityY;
+
+        if (this.y > this.floorY) {
+            this.y = this.floorY;
+            this.velocityY = 0;
+        }
     }
 
     draw() {
         if (!this.active) return;
 
-        switch (this.type) {
-            case "speed":
-                this.context.fillStyle = "green";
-                break;
-            case "jump":
-                this.context.fillStyle = "purple"; // distinct color
-                break;
-            default:
-                this.context.fillStyle = "white";
-        }
+        const ctx = this.context;
+        const x = this.x;
+        const y = this.y;
+        const w = this.width;
+        const h = this.height;
 
-        this.context.fillRect(this.x, this.y, this.width, this.height);
+        ctx.beginPath();
+
+        switch (this.type) {
+            // SPEED: Lightning bolt
+            case "speed":
+                ctx.fillStyle = "green";
+                ctx.moveTo(x + w * 0.5, y);
+                ctx.lineTo(x + w * 0.7, y + h * 0.4);
+                ctx.lineTo(x + w * 0.6, y + h * 0.4);
+                ctx.lineTo(x + w * 0.8, y + h);
+                ctx.lineTo(x + w * 0.3, y + h * 0.6);
+                ctx.lineTo(x + w * 0.4, y + h * 0.6);
+                ctx.closePath();
+                ctx.fill();
+                break;
+
+            // JUMP: Upward arrow
+            case "jump":
+                ctx.fillStyle = "purple";
+                ctx.moveTo(x + w * 0.5, y); // top point
+                ctx.lineTo(x + w, y + h); // bottom right
+                ctx.lineTo(x + w * 0.65, y + h); // inner right
+                ctx.lineTo(x + w * 0.65, y + h * 0.75); // down
+                ctx.lineTo(x + w * 0.35, y + h * 0.75); // bottom bar
+                ctx.lineTo(x + w * 0.35, y + h); // inner left
+                ctx.lineTo(x, y + h); // bottom left
+                ctx.closePath();
+                ctx.fill();
+                break;
+
+            // HEALTH: Heart
+            case "health":
+                ctx.fillStyle = "red";
+                ctx.arc(x + w * 0.3, y + h * 0.3, w * 0.2, 0, Math.PI * 2);
+                ctx.arc(x + w * 0.7, y + h * 0.3, w * 0.2, 0, Math.PI * 2);
+                ctx.moveTo(x + w * 0.1, y + h * 0.4);
+                ctx.lineTo(x + w * 0.9, y + h * 0.4);
+                ctx.lineTo(x + w * 0.5, y + h);
+                ctx.closePath();
+                ctx.fill();
+                break;
+
+            default:
+                ctx.fillStyle = "white";
+                ctx.fillRect(x, y, w, h);
+        }
     }
 
     apply(player) {
@@ -378,19 +414,19 @@ class PowerUp {
             case "speed":
                 player.playerBaseSpeed *= 2;
                 player.playerRunSpeed *= 2;
-
                 setTimeout(() => {
                     player.playerBaseSpeed /= 2;
                     player.playerRunSpeed /= 2;
                 }, this.duration);
                 break;
-
             case "jump":
-                player.jumpSpeed *= 1.5; // increase jump height by 50%
-
+                player.jumpSpeed *= 1.5;
                 setTimeout(() => {
                     player.jumpSpeed /= 1.5;
                 }, this.duration);
+                break;
+            case "health":
+                player.health = Math.min(player.maxHealth, player.health + 25); // heal 25
                 break;
         }
     }
@@ -422,18 +458,105 @@ class Player {
         this.context = context;
         this.playerVelocityY = 0;
         this.playerVelocityX = 0;
-        this.isJumping;
-        this.hasJumped;
+
+        this.wallBounceVelocity = 40;
+
         this.isAlive;
+
+        this.jumpCount = 0; // counts double jumps
+        this.maxJumps = 2; // allow 1 double jump
+        this.wallJumpUsed = false; // tracks wall jump usage
+        this.isJumping = false; // true while in the air
+        this.hasJumped;
         this.isDashing;
+
+        this.enemyLeft = true;
+
+        this.health = 100;
+        this.maxHealth = 100;
+        this.invincible = false; // flag for temporary invincibility
+        this.invincibleDuration = 1000; // 1 second in ms
+        this.lastHitTime = 0; // timestamp of last hit
     }
 
     draw() {
-        this.context.fillStyle = "blue";
-        this.context.fillRect(this.x, this.y, this.width, this.height);
+        const ctx = this.context;
+        const w = this.width;
+        const h = this.height;
+
+        ctx.save(); // save current transform state
+
+        if (!this.enemyLeft) {
+            // Flip horizontally around the center of the player
+            ctx.translate(this.x + w / 2, 0); // move origin to player's center x
+            ctx.scale(-1, 1); // flip horizontally
+            ctx.translate(-(this.x + w / 2), 0); // move back
+        }
+
+        // Draw the player as usual (right-facing)
+        ctx.fillStyle = "blue";
+        ctx.fillRect(this.x, this.y, w, h);
+        ctx.strokeStyle = "black";
+        ctx.lineWidth = 2;
+        ctx.strokeRect(this.x, this.y, w, h);
+
+        // Eyes
+        ctx.fillStyle = "white";
+        ctx.fillRect(this.x + w * 0.45, this.y + h * 0.25, w * 0.2, h * 0.2);
+        ctx.fillRect(this.x + w * 0.15, this.y + h * 0.25, w * 0.2, h * 0.2);
+
+        // Pupils
+        ctx.fillStyle = "black";
+        ctx.fillRect(this.x + w * 0.5, this.y + h * 0.3, w * 0.1, h * 0.1);
+        ctx.fillRect(this.x + w * 0.2, this.y + h * 0.3, w * 0.1, h * 0.1);
+
+        // Eyebrows
+        ctx.beginPath();
+        ctx.moveTo(this.x + w * 0.45, this.y + h * 0.2);
+        ctx.lineTo(this.x + w * 0.65, this.y + h * 0.18);
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.moveTo(this.x + w * 0.15, this.y + h * 0.18);
+        ctx.lineTo(this.x + w * 0.35, this.y + h * 0.2);
+        ctx.stroke();
+
+        // Mouth
+        ctx.beginPath();
+        ctx.moveTo(this.x + w * 0.25, this.y + h * 0.7);
+        ctx.lineTo(this.x + w * 0.6, this.y + h * 0.7);
+        ctx.stroke();
+
+        ctx.restore(); // restore original transform state
+
+        this.drawHealthBar();
     }
 
-    handleInput(keys, lastKey) {
+    drawHealthBar() {
+        const ctx = this.context;
+        const barWidth = this.width;
+        const barHeight = 5;
+        const healthRatio = this.health / this.maxHealth;
+
+        // Background
+        ctx.fillStyle = "red";
+        ctx.fillRect(this.x, this.y - barHeight - 2, barWidth, barHeight);
+
+        // Health
+        ctx.fillStyle = "limegreen";
+        ctx.fillRect(
+            this.x,
+            this.y - barHeight - 2,
+            barWidth * healthRatio,
+            barHeight
+        );
+
+        // Optional: border
+        ctx.strokeStyle = "black";
+        ctx.strokeRect(this.x, this.y - barHeight - 2, barWidth, barHeight);
+    }
+
+    handleInput(keys, lastKey, wall) {
         // Horizontal movement
         const speed = keys.shift.pressed
             ? this.playerRunSpeed
@@ -443,44 +566,145 @@ class Player {
             this.playerVelocityX = lastKey === "a" ? -speed : speed;
         } else if (keys.a.pressed) {
             this.playerVelocityX = -speed;
+            this.enemyLeft = true;
         } else if (keys.d.pressed) {
             this.playerVelocityX = speed;
+            this.enemyLeft = false;
         } else {
             this.playerVelocityX = 0;
         }
 
         // Jumping
-        if (keys.space.pressed && !isJumping && !hasJumped) {
-            this.playerVelocityY = -this.jumpSpeed;
-            isJumping = true;
-            hasJumped = true;
+        if (keys.space.pressed) {
+            if (this.jumpCount < this.maxJumps) {
+                // Normal double jump
+                this.playerVelocityY = -this.jumpSpeed;
+                this.jumpCount++;
+                keys.space.pressed = false;
+            } else {
+                // Wall jump
+                const touchingWall = this.isTouchingWall(wall);
+                if (!this.wallJumpUsed && touchingWall) {
+                    this.playerVelocityY = -this.jumpSpeed;
+
+                    // Push away from wall
+                    if (
+                        this.x + this.width / 2 <
+                        touchingWall.x + touchingWall.width / 2
+                    ) {
+                        // Player is on left side of wall, jump right
+                        this.playerVelocityX -= this.wallBounceVelocity;
+                        this.playerVelocityY -= this.jumpSpeed;
+                    } else {
+                        // Player is on right side of wall, jump left
+                        this.playerVelocityX += this.wallBounceVelocity;
+                        this.playerVelocityY -= this.jumpSpeed;
+                    }
+
+                    this.wallJumpUsed = true;
+                    keys.space.pressed = false;
+                }
+            }
         }
+    }
+
+    isTouchingWall(wall) {
+        // Returns the wall section being touched (or null if none)
+        for (let section of wall.aliveSections) {
+            const overlapX =
+                this.x <= section.x + section.width &&
+                this.x + this.width >= section.x;
+            const overlapY =
+                this.y + this.height > section.y &&
+                this.y < section.y + section.height;
+
+            if (overlapX && overlapY) {
+                return section;
+            }
+        }
+        return null;
     }
 
     updatePosition() {
         // Apply gravity
         this.playerVelocityY += this.gravity;
-
         this.x += this.playerVelocityX;
         this.y += this.playerVelocityY;
 
-        // Ground check
+        // Floor collision
         if (this.y + this.height >= canvas.height) {
             this.y = canvas.height - this.height;
             this.playerVelocityY = 0;
-            isJumping = false;
-            hasJumped = false;
+            this.jumpCount = 0; // reset double jump
+            this.wallJumpUsed = false; // reset wall jump
+            this.isJumping = false; // back on floor
+        } else {
+            this.isJumping = true; // in air
         }
 
-        // Keep inside bounds
+        // Keep inside horizontal bounds
         if (this.x < 0) this.x = 0;
-        if (this.x + this.width > canvasWidth) {
+        if (this.x + this.width > canvasWidth)
             this.x = canvasWidth - this.width;
+
+        // Reset invincibility after cooldown
+        if (
+            this.invincible &&
+            Date.now() - this.lastHitTime > this.invincibleDuration
+        ) {
+            this.invincible = false;
         }
     }
     updatePlayer() {
-        this.player.handleInput(keys, lastKey);
+        this.player.handleInput(keys, lastKey, this.wall); // ✅ pass wall here
         this.player.updatePosition();
+        this.player.handleWallCollisions(this.wall);
+    }
+
+    handleWallCollisions(wall) {
+        this.isOnGround = false; // assume in air until proven otherwise
+
+        wall.sections.forEach((section) => {
+            if (section.destroyed) return;
+
+            // AABB collision detection
+            const px = this.x;
+            const py = this.y;
+            const pw = this.width;
+            const ph = this.height;
+
+            const sx = section.x;
+            const sy = section.y;
+            const sw = section.width;
+            const sh = section.height;
+
+            const overlapX = px + pw > sx && px < sx + sw;
+            const overlapY = py + ph > sy && py < sy + sh;
+
+            if (overlapX && overlapY) {
+                // Vertical collision
+                if (py + ph - this.playerVelocityY <= sy) {
+                    // landed on top of wall
+                    this.y = sy - ph;
+                    this.playerVelocityY = 0;
+                    this.jumpCount = 0; // reset jumps when on top
+                    this.isOnGround = true;
+                } else if (py - this.playerVelocityY >= sy + sh) {
+                    // hit the bottom of a wall
+                    this.y = sy + sh;
+                    this.playerVelocityY = 0;
+                }
+
+                // Horizontal collision
+                if (px + pw - this.playerVelocityX <= sx) {
+                    // hit left side
+                    this.x = sx - pw;
+                } else if (px - this.playerVelocityX >= sx + sw) {
+                    // hit right side
+                    this.x = sx + sw;
+                }
+            }
+        });
     }
 }
 
@@ -571,18 +795,6 @@ class Game {
         return this.wall.sections.every((section) => section.destroyed);
     }
 
-    spawnPowerUp(x, y) {
-        const types = ["speed", "jump"];
-        const baseChance = 0.2;
-        const waveBonus = 0.9 * this.waveNumber; // +5% per wave
-        const chance = Math.min(0.9, baseChance + waveBonus); // cap at 70%
-
-        if (Math.random() < chance) {
-            const type = types[Math.floor(Math.random() * types.length)];
-            this.powerUps.push(new PowerUp(x, y, type, this.context));
-        }
-    }
-
     spawnWave() {
         this.waveNumber++;
         this.waveActive = true;
@@ -635,39 +847,32 @@ class Game {
         this.bullets.push(bullet);
     }
 
-    update() {
-        this.updatePlayer();
-        this.updateEnemies();
-        this.updateBullets();
-        this.handleCollisions();
-        this.handleWaves();
-        this.updateScore();
-        this.checkGameOver();
-        this.powerUps.forEach((pu) => pu.checkCollision(this.player));
-    }
-
     updatePlayer() {
-        this.player.handleInput(keys, lastKey);
+        this.player.handleInput(keys, lastKey, this.wall);
         this.player.updatePosition();
+        this.player.handleWallCollisions(this.wall);
     }
 
     updateEnemies() {
         this.enemies.forEach((enemy) => {
+            // Update enemy depending on type
             if (enemy instanceof HomingEnemy) {
                 enemy.update(this.player, this.wall);
             } else {
                 enemy.update();
             }
+
+            // Check collision with wall
             this.wall.checkCollision(enemy);
 
-            // Spawn power-up when enemy dies
+            // Drop power-up if the enemy just died
             if (enemy.destroyed && !enemy.powerUpDropped) {
-                this.spawnPowerUp(enemy.x, enemy.y);
-                enemy.powerUpDropped = true; // prevent multiple drops
+                this.dropPowerUp(enemy.x, enemy.y);
+                enemy.powerUpDropped = true;
             }
         });
 
-        // remove destroyed/offscreen enemies
+        // Remove destroyed/offscreen enemies
         this.enemies = this.enemies.filter(
             (enemy) => !enemy.destroyed && enemy.x + enemy.radius > 0
         );
@@ -693,10 +898,14 @@ class Game {
                     this.killScore++;
                     bullet.destroyed = true;
 
-                    // ✅ mark enemy destroyed if dead
-                    if (enemy.health <= 0) {
-                        enemy.destroyed = true;
+                    // Drop power-up if enemy just died
+                    if (enemy.health <= 0 && !enemy.powerUpDropped) {
+                        this.dropPowerUp(enemy.x, enemy.y);
+                        enemy.powerUpDropped = true;
                     }
+
+                    // Mark enemy destroyed
+                    if (enemy.health <= 0) enemy.destroyed = true;
                 }
             });
         });
@@ -727,6 +936,18 @@ class Game {
             (b) => !b.isOffScreen(canvasWidth, canvasHeight) && !b.destroyed
         );
         this.enemies = this.enemies.filter((enemy) => !enemy.destroyed);
+    }
+
+    dropPowerUp(x, y) {
+        const types = ["speed", "jump"];
+        const baseChance = 0.2;
+        const waveBonus = 0.05 * this.waveNumber; // +5% per wave
+        const chance = Math.min(0.7, baseChance + waveBonus); // cap at 70%
+
+        if (Math.random() < chance) {
+            const type = types[Math.floor(Math.random() * types.length)];
+            this.powerUps.push(new PowerUp(x, y, type, this.context));
+        }
     }
 
     handleWaves() {
@@ -845,22 +1066,12 @@ class Game {
             this.draw();
             if (isAlive) requestAnimationFrame(loop);
         };
-        // Existing speed power-up
+        // Example: spawn near middle of canvas
         this.powerUps.push(
             new PowerUp(
-                canvasWidth / 2 - 50,
+                canvasWidth / 2,
                 canvasHeight - 36,
                 "speed",
-                this.context
-            )
-        );
-
-        // New jump power-up
-        this.powerUps.push(
-            new PowerUp(
-                canvasWidth / 2 + 50,
-                canvasHeight - 36,
-                "jump",
                 this.context
             )
         );
@@ -874,31 +1085,44 @@ class Game {
     // return true if the playerangle and enemy are colliding
     playerenemyColliding(enemy, player) {
         // Find the x/y distance to center of objects
-        var distX = Math.abs(enemy.x - player.x - playerWidth / 2);
-        var distY = Math.abs(enemy.y - player.y - playerHeight / 2);
+        const distX = Math.abs(enemy.x - player.x - player.width / 2);
+        const distY = Math.abs(enemy.y - player.y - player.height / 2);
 
-        // If it's more than the distance plus the radius, no collision
-        if (distX > playerWidth / 2 + enemyRadius) {
-            return false;
-        }
-        if (distY > playerHeight / 2 + enemyRadius) {
-            return false;
-        }
+        if (distX > player.width / 2 + enemy.radius) return false;
+        if (distY > player.height / 2 + enemy.radius) return false;
 
-        // If it's within the distance plus the radius, collision
-        var collision = distX <= playerWidth / 2 || distY <= playerHeight / 2;
+        const dx = distX - player.width / 2;
+        const dy = distY - player.height / 2;
+        const collision = dx * dx + dy * dy <= enemy.radius * enemy.radius;
 
-        // Check for collision at corner using Pythagorean theorem
-        var dx = distX - playerWidth / 2;
-        var dy = distY - playerHeight / 2;
-        collision = collision || dx * dx + dy * dy <= enemyRadius * enemyRadius;
+        if (collision && !player.invincible) {
+            player.health -= 20; // amount of damage per hit
+            player.invincible = true;
+            player.lastHitTime = Date.now();
+            console.log(`Player hit! Health: ${player.health}`);
 
-        if (collision) {
-            isAlive = false;
-            console.log("Collision detected");
+            if (player.health <= 0) {
+                isAlive = false;
+                console.log("Player dead");
+            }
         }
 
         return collision;
+    }
+
+    update() {
+        this.updatePlayer();
+        this.updateEnemies();
+        this.updateBullets();
+        this.handleCollisions();
+        this.handleWaves();
+        this.updateScore();
+        this.checkGameOver();
+        this.powerUps.forEach((pu) => pu.checkCollision(this.player));
+        this.powerUps.forEach((pu) => {
+            pu.update();
+            pu.checkCollision(this.player);
+        });
     }
 }
 

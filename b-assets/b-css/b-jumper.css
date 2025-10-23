@@ -1,0 +1,13 @@
+body {
+    text-align: center;
+}
+
+#board {
+    border: 5px solid black;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    translate: -50% -50%;
+    background-color: black;
+    border: 2px solid #333;
+}

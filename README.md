@@ -24,7 +24,7 @@ The platform floor is fixed in position at the bottom of the viewport, creating 
 
 Features
 --------
-Lazer Fighter
+Block Defence
 --------
 Lazer fighter is a baseline project that is intended for future production, producing a game slice focused on player movement and basic side view shooter mechanics. The game features a wave system for enemy spawning as well as multiple enemy types, player powerup system with a variety of powerups, a player health and combat system in the form of projectiles, and a score and high score feature
 
@@ -42,7 +42,7 @@ The game is deployed using GitHub’s Pages feature, which allows the project to
 
 AI Implementation
 ------------
-Lazer Fighter
+Block Defence
 -----------
 Rudimentary AI is engaged with two enemy types, homing enemies and normal enemies. Though this is the case the enemy uses a state machine prepared to scale the project for future development. Normal enemies just move directly accross the screen to destroy the players wall while the homing enemies where brought in to address an issue with less wall pieces meaning fewer enemies targeting the players wall. I decided to engage the homing factor when part way across the games canvas to help them blend in with normal enemies and be more of a threat
 
@@ -72,6 +72,11 @@ https://www.frankslaboratory.co.uk/downloads/125/beetlemorph.png
 https://www.frankslaboratory.co.uk/downloads/125/background.png
 
 https://www.freepik.com/free-vector/set-space-game-ground-layers-assets_149645124.htm#fromView=search&page=1&position=48&uuid=88e40aec-fce8-4869-9202-80355266ed11&query=space+game+sprite+sheet
+
+Block Defence
+-------------
+https://penusbmic.itch.io/sci-fi-planetone
+
 
 
 

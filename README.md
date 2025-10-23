@@ -56,9 +56,11 @@ The main website includes AI (ChatGPT) improvements that were applied to enhance
 
 Testing and Validation
 ------------------
+User testing was carried out on the games throughout the course of the projects to ensure streamlined user playability and provide user feeback for bug testing and code correction
 
 References
 --------
+
 
 
 

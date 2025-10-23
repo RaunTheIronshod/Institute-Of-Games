@@ -28,19 +28,10 @@ let canvasWidth = 1024;
 const canvas = document.getElementById("b-jumper");
 const context = canvas.getContext("2d");
 
-let background;
-
 window.onload = function () {
     // define canvas size
     canvas.width = canvasWidth;
     canvas.height = canvasHeight;
-
-    // Create background instance
-    background = new Background(
-        canvasWidth,
-        canvasHeight,
-        "/b-assets/b-images/background.png"
-    );
 
     // create new game instance
     game = new Game(context);
@@ -159,34 +150,6 @@ canvas.addEventListener("click", (event) => {
     // Fire a bullet toward the mouse
     game.fireBullet(targetX, targetY);
 });
-
-class Background {
-    constructor(width, height, src) {
-        this.width = width;
-        this.height = height;
-
-        // create offscreen canvas
-        this.bgCanvas = document.createElement("canvas");
-        this.bgCanvas.width = width;
-        this.bgCanvas.height = height;
-        this.bgCtx = this.bgCanvas.getContext("2d");
-
-        this.image = new Image();
-        this.image.src = src;
-        this.isReady = false;
-
-        this.image.onload = () => {
-            this.bgCtx.drawImage(this.image, 0, 0, width, height);
-            this.isReady = true;
-        };
-    }
-
-    draw(context) {
-        if (this.isReady) {
-            context.drawImage(this.bgCanvas, 0, 0);
-        }
-    }
-}
 
 class Enemy {
     constructor(x, y, radius, context) {
@@ -1374,8 +1337,9 @@ class Game {
         // Clear the canvas before drawing
         this.context.clearRect(0, 0, canvasWidth, canvasHeight);
 
-        // draw the pre-rendered background
-        background.draw(this.context);
+        // Fill background with black instead
+        this.context.fillStyle = "black";
+        this.context.fillRect(0, 0, canvasWidth, canvasHeight);
 
         // Draw the wall
         this.wall.draw();

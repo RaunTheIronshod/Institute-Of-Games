@@ -60,6 +60,20 @@ User testing was carried out on the games throughout the course of the projects 
 
 References
 --------
+Space Invaders
+--------
+https://github.com/Carla-Codes/starry-night-css-animation/blob/master/stars.png
+https://github.com/Carla-Codes/starry-night-css-animation/blob/master/clouds.png
+https://github.com/Carla-Codes/starry-night-css-animation/blob/master/twinkling.png
+
+https://www.frankslaboratory.co.uk/downloads/125/player_jets.png
+https://www.frankslaboratory.co.uk/downloads/125/player.png
+https://www.frankslaboratory.co.uk/downloads/125/beetlemorph.png
+https://www.frankslaboratory.co.uk/downloads/125/background.png
+
+https://www.freepik.com/free-vector/set-space-game-ground-layers-assets_149645124.htm#fromView=search&page=1&position=48&uuid=88e40aec-fce8-4869-9202-80355266ed11&query=space+game+sprite+sheet
+
+
 
 
 

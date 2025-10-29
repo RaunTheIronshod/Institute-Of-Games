@@ -2,6 +2,8 @@ Intro
 ------
 This website is a demonstrable Javascript project in games engine coding by Berren Stonechild and Chanel Clarke. The project's scope is to produce two arcade games as portfolio work that will be deployed onto a webpage through Github's pages feature.
 
+Live link: https://rauntheironshod.github.io/Institute-Of-Games/
+
 ## Table of Contents
 - [Project Outline](#project-outline)
 - [User Stories](#user-stories)
@@ -76,6 +78,7 @@ https://www.freepik.com/free-vector/set-space-game-ground-layers-assets_14964512
 Block Defence
 -------------
 https://penusbmic.itch.io/sci-fi-planetone
+
 
 
 

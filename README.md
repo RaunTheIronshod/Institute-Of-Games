@@ -4,6 +4,8 @@ This website is a demonstrable Javascript project in games engine coding by Berr
 
 Live link: https://rauntheironshod.github.io/Institute-Of-Games/
 
+//note: this projects readme and function will be updated with further development after the conclusion of the hackathons project review deadline, I have made no actual changes beyond push/deployment fixes
+
 ## Table of Contents
 - [Project Outline](#project-outline)
 - [User Stories](#user-stories)
@@ -74,6 +76,7 @@ https://www.frankslaboratory.co.uk/downloads/125/beetlemorph.png
 https://www.frankslaboratory.co.uk/downloads/125/background.png
 
 https://www.freepik.com/free-vector/set-space-game-ground-layers-assets_149645124.htm#fromView=search&page=1&position=48&uuid=88e40aec-fce8-4869-9202-80355266ed11&query=space+game+sprite+sheet
+
 
 
 
